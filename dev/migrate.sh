@@ -13,4 +13,4 @@ psql -Atx "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGR
 EOL
 
 echo "Run mev_inspect database migration"
-migrate -path /home/tlinh/Downloads/mev-detection/packages/db-migration/migration -database "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/mev_inspect?sslmode=disable" up
+migrate -source file://packages/db-migration/migration -database "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/mev_inspect?sslmode=disable" up
