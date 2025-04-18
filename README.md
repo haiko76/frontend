@@ -13,6 +13,6 @@ pnpm prisma generate
 ## Run the app 
 Run the syncer for data (OR USE DATA IN `./data`) and run the app:
 ```
-pnpm tsx /home/tlinh/Downloads/frontend/packages/backend/src/syncer/index.ts
+pnpm tsx /packages/backend/src/syncer/index.ts
 pnpm tsx packages/backend/src/api/index.ts
 ```
