@@ -1,0 +1,145 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["mev_inspect"]
+}
+
+model arbitrage {
+  transaction_hash     String   @id @db.VarChar(66)
+  block_number         Int
+  arbitrager           String   @db.VarChar(42)
+  protocols            String[] @db.VarChar(255)
+  profit_raw           Json     @db.Json
+  cost_in_usd          Decimal  @db.Decimal
+  profit_amount_in_usd Decimal  @db.Decimal
+  flash_loan_asset     String?  @db.VarChar(42)
+  flash_loan_amount    Decimal? @db.Decimal
+  flash_loan_in_usd    Decimal? @db.Decimal
+
+  @@schema("mev_inspect")
+}
+
+model block {
+  number    Int      @id
+  hash      String   @db.VarChar(66)
+  timestamp DateTime @db.Timestamptz(6)
+
+  @@schema("mev_inspect")
+}
+
+model liquidation {
+  transaction_hash         String   @id @db.VarChar(66)
+  block_number             Int
+  payer                    String   @db.VarChar(42)
+  borrower                 String   @db.VarChar(42)
+  liquidator               String?  @db.VarChar(42)
+  asset_in_debt            String   @db.VarChar(42)
+  debt_to_cover            Decimal  @db.Decimal
+  liquidated_amount        Decimal  @db.Decimal
+  asset_liquidated         String   @db.VarChar(42)
+  cost_in_usd              Decimal  @db.Decimal
+  profit_amount_in_usd     Decimal  @db.Decimal
+  repayment_amount_in_usd  Decimal  @db.Decimal
+  liquidated_amount_in_usd Decimal  @db.Decimal
+  protocols                String[] @db.VarChar(255)
+  flash_loan_asset         String?  @db.VarChar(42)
+  flash_loan_amount        Decimal? @db.Decimal
+  flash_loan_in_usd        Decimal? @db.Decimal
+
+  @@schema("mev_inspect")
+}
+
+model sandwich {
+  transaction_hash      String   @id @db.VarChar(66)
+  block_number          Int
+  sandwich_id           String   @db.VarChar(66)
+  transaction_log_index Int
+  type                  String   @db.VarChar(50)
+  sandwicher            String   @db.VarChar(42)
+  victim                String?  @db.VarChar(42)
+  profit_raw            Json     @db.Json
+  profit_amount_in_usd  Decimal  @db.Decimal
+  cost_in_usd           Decimal  @db.Decimal
+  protocols             String[] @db.VarChar(255)
+
+  @@index([sandwich_id], map: "idx_sandwich_id")
+  @@schema("mev_inspect")
+}
+
+model swap {
+  event_log_index  Int
+  block_number     Int
+  transaction_hash String  @db.VarChar(66)
+  asset_in         String  @db.VarChar(42)
+  asset_out        String  @db.VarChar(42)
+  from             String  @db.VarChar(42)
+  to               String? @db.VarChar(42)
+  amount_out       Decimal @db.Decimal
+  amount_in        Decimal @db.Decimal
+  protocol         String? @db.VarChar(100)
+  metadata         Json?   @db.Json
+
+  @@id([block_number, transaction_hash, event_log_index])
+  @@schema("mev_inspect")
+}
+
+model token {
+  address  String  @id @db.VarChar(42)
+  symbol   String? @db.VarChar(42)
+  decimals Int
+  logo     String? @db.VarChar(255)
+
+  @@schema("mev_inspect")
+}
+
+model transaction {
+  block_number Int
+  hash         String   @id @db.VarChar(66)
+  label        String?  @db.VarChar(50)
+  from         String   @db.VarChar(42)
+  to           String?  @db.VarChar(42)
+  gas_price    Decimal  @db.Decimal
+  gas_used     Decimal  @db.Decimal
+  index        Int
+  timestamp    DateTime @db.Timestamptz(6)
+
+  @@schema("mev_inspect")
+}
+
+model transfer {
+  event_log_index  Int
+  block_number     Int
+  transaction_hash String   @db.VarChar(66)
+  asset_id         String   @db.VarChar(42)
+  from             String   @db.VarChar(42)
+  to               String?  @db.VarChar(42)
+  amount           Decimal? @db.Decimal
+
+  @@id([block_number, transaction_hash, event_log_index])
+  @@schema("mev_inspect")
+}
+
+model pool {
+  address         String   @id @db.VarChar(42)
+  assets          String[] @db.VarChar(42)
+  factory_address String   @db.VarChar(42)
+  protocol        String   @db.VarChar(100)
+
+  @@schema("mev_inspect")
+}
+
+model erc20_historical_price {
+  token_address String    @db.VarChar(42)
+  currency      String    @db.Char(3)
+  price         Decimal   @db.Decimal
+  to_block      Int
+  timestamp     DateTime? @db.Timestamptz(6)
+
+  @@id([token_address, currency, to_block])
+  @@schema("mev_inspect")
+}

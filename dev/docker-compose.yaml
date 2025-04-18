@@ -1,0 +1,46 @@
+services: 
+  redis:
+    platform: linux/amd64
+    image: redis:7
+    command: --requirepass 123456
+    ports:
+      - 6379:6379
+    volumes:
+      - redis-data:/data
+
+  postgres:
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: "123456"
+      TZ: Europe/Berlin
+      PGTZ: Europe/Berlin
+    command: [ "-c", "max_connections=1000" ]
+    ports:
+      - 5432:5432
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: pg_isready -U postgres
+      interval: 1s
+      retries: 10
+      start_period: 0s
+
+  # token-metadata-cron: 
+  #   build: 
+  #     dockerfile: Dockerfile.backend
+  #     context: .
+  #   restart: always
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #   environment: 
+  #     REDIS_URL: 
+  #     MORALIS_API_KEY:
+      
+  #   command: ./build/src/cmd/token-metadata-cron.ts
+
+
+volumes:
+  redis-data: {}
+  postgres-data: {}

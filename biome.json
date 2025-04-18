@@ -1,0 +1,112 @@
+{
+	"$schema": "https://biomejs.dev/schemas/1.9.0/schema.json",
+	"assists": {
+		"actions": {
+			"source": {
+				"sortJsxProps": "on",
+				"useSortedKeys": "on"
+			}
+		},
+		"enabled": false
+	},
+	"css": {
+		"parser": {
+			"cssModules": true
+		}
+	},
+	"files": {
+		"include": ["packages/**/*"]
+	},
+	"formatter": {
+		"bracketSpacing": true,
+		"enabled": true,
+		"lineWidth": 120,
+		"useEditorconfig": true
+	},
+	"javascript": {
+		"formatter": {
+			"arrowParentheses": "always",
+			"quoteStyle": "double",
+			"semicolons": "always",
+			"trailingCommas": "all"
+		}
+	},
+	"json": {
+		"parser": {
+			"allowComments": true,
+			"allowTrailingCommas": true
+		}
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"a11y": {
+				"all": false
+			},
+			"complexity": {
+				"noUselessFragments": "error",
+				"noUselessStringConcat": "error",
+				"useArrowFunction": "off",
+				"useLiteralKeys": "off",
+				"useOptionalChain": "off"
+			},
+			"correctness": {
+				"all": true,
+				"noNodejsModules": "off",
+				"noUndeclaredDependencies": "off",
+				"noUndeclaredVariables": "off",
+				"noUnnecessaryContinue": "off",
+				"noUnusedFunctionParameters": "error",
+				"noUnusedImports": "error",
+				"noUnusedLabels": "error",
+				"noUnusedPrivateClassMembers": "error",
+				"noUnusedVariables": "error",
+				"useExhaustiveDependencies": "error",
+				"useHookAtTopLevel": "error",
+				"useImportExtensions": "off"
+			},
+			"nursery": {
+				"noDescendingSpecificity": "error",
+				"noNestedTernary": "off",
+				"noOctalEscape": "error",
+				"noTemplateCurlyInString": "error",
+				"noUselessEscapeInRegex": "error",
+				"useComponentExportOnlyModules": "off"
+			},
+			"performance": {
+				"all": true,
+				"noAccumulatingSpread": "off",
+				"noBarrelFile": "off",
+				"noReExportAll": "off"
+			},
+			"recommended": true,
+			"security": {
+				"noDangerouslySetInnerHtml": "off"
+			},
+			"style": {
+				"noArguments": "off",
+				"noInferrableTypes": "off",
+				"noNonNullAssertion": "off",
+				"noParameterAssign": "off",
+				"noUnusedTemplateLiteral": "off",
+				"noUselessElse": "off",
+				"useLiteralEnumMembers": "off",
+				"useSelfClosingElements": "off",
+				"useTemplate": "off"
+			},
+			"suspicious": {
+				"noArrayIndexKey": "off",
+				"noAssignInExpressions": "off",
+				"noImplicitAnyLet": "off",
+				"noPrototypeBuiltins": "off"
+			}
+		}
+	},
+	"organizeImports": {
+		"enabled": true
+	},
+	"vcs": {
+		"defaultBranch": "main",
+		"useIgnoreFile": true
+	}
+}
