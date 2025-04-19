@@ -1,4 +1,4 @@
-import type { BaseTransfer, MevType } from "../../types";
+import type { BaseTransfer, BaseTxWithTraces, MevType, TokenMetadata } from "../../types";
 
 export type BlockRequest = {
 	blockNumber: number;
@@ -55,6 +55,16 @@ export type ArbitrageMevTx = {
 	blockNumber: number;
 	index: number;
 	traces: SafeBaseTransfer[];
+	assetMetadata: Record<string, Omit<TokenMetadata, "price">>;
+};
+
+export type LiquidationEvent = {
+	payer: string;
+	borrower: string;
+	liquidatedToken: string;
+	liquidatedAmount: number;
+	debtToken: string;
+	debtToCover: number;
 };
 
 export type LiquidationMevTx = {
@@ -67,13 +77,10 @@ export type LiquidationMevTx = {
 	cost: number;
 	revenue: number;
 	blockNumber: number;
-	borrower: string;
 	liquidator: string;
-	debtToken: string;
-	debtToCover: number;
-	liquidatedToken: string;
-	liquidatedAmount: number;
+	liquidationEvent: LiquidationEvent[];
 	traces: SafeBaseTransfer[];
+	assetMetadata: Record<string, Omit<TokenMetadata, "price">>;
 };
 
 export enum SandwichType {
@@ -82,26 +89,23 @@ export enum SandwichType {
 	BackRun = "BackRun",
 }
 
+export type SandwichMevTxPart = Omit<BaseTxWithTraces, "traces"> & {
+	type: SandwichType;
+	traces: SafeBaseTransfer[];
+};
+
 export type SandwichMevTx = {
 	label: MevType.Sandwich;
 	time: Date;
 	id: string;
-	frontRun: {
-		type: SandwichType.FrontRun;
-		traces: SafeBaseTransfer[];
-	};
-	backRun: {
-		type: SandwichType.BackRun;
-		traces: SafeBaseTransfer[];
-	};
-	victim: {
-		type: SandwichType.Victim;
-		traces: SafeBaseTransfer[];
-	};
+	frontRun: SandwichMevTxPart[];
+	backRun: SandwichMevTxPart[];
+	victim: SandwichMevTxPart[];
 	profit: number;
 	cost: number;
 	revenue: number;
 	blockNumber: number;
+	assetMetadata: Record<string, Omit<TokenMetadata, "price">>;
 };
 
 export type OverviewResponse = {

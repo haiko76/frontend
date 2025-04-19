@@ -3,11 +3,11 @@ import type {
 	ChainId,
 	FlashLoan,
 	LendingProtocol,
-	Liquidate,
 	LiquidityWithdrawal,
 	Log,
 	Pool,
 	Repayment,
+	Seizure,
 	SwapProtocol,
 	Transfer,
 } from "../types";
@@ -136,7 +136,7 @@ export function getRepayments(chainId: ChainId, markets: Market[], logs: Classif
 		.filter((repayment: Repayment | null): repayment is Repayment => !!repayment);
 }
 
-export function getLiquidation(chainId: ChainId, markets: Market[], logs: ClassifiedEvent[]): Liquidate[] {
+export function getLiquidation(chainId: ChainId, markets: Market[], logs: ClassifiedEvent[]): Seizure[] {
 	return logs
 		.map((log) => {
 			if (log.classifier.type !== "liquidate") {
@@ -157,7 +157,7 @@ export function getLiquidation(chainId: ChainId, markets: Market[], logs: Classi
 			}
 			return log.classifier.parse(market, log);
 		})
-		.filter((seizure: Liquidate | null): seizure is Liquidate => !!seizure);
+		.filter((seizure: Seizure | null): seizure is Seizure => !!seizure);
 }
 
 export function getClassifiers(): Classifier[] {

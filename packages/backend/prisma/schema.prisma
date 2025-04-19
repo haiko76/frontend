@@ -33,24 +33,18 @@ model block {
 }
 
 model liquidation {
-  transaction_hash         String   @id @db.VarChar(66)
-  block_number             Int
-  payer                    String   @db.VarChar(42)
-  borrower                 String   @db.VarChar(42)
-  liquidator               String?  @db.VarChar(42)
-  asset_in_debt            String   @db.VarChar(42)
-  debt_to_cover            Decimal  @db.Decimal
-  liquidated_amount        Decimal  @db.Decimal
-  asset_liquidated         String   @db.VarChar(42)
-  cost_in_usd              Decimal  @db.Decimal
-  profit_amount_in_usd     Decimal  @db.Decimal
-  repayment_amount_in_usd  Decimal  @db.Decimal
-  liquidated_amount_in_usd Decimal  @db.Decimal
-  protocols                String[] @db.VarChar(255)
-  flash_loan_asset         String?  @db.VarChar(42)
-  flash_loan_amount        Decimal? @db.Decimal
-  flash_loan_in_usd        Decimal? @db.Decimal
+  transaction_hash     String   @id @db.VarChar(66)
+  block_number         Int
+  liquidator           String?  @db.VarChar(42)
+  cost_in_usd          Decimal  @db.Decimal
+  profit_amount_in_usd Decimal  @db.Decimal
+  revenue_in_usd       Decimal  @db.Decimal
+  protocols            String[] @db.VarChar(255)
+  flash_loan_asset     String?  @db.VarChar(42)
+  flash_loan_amount    Decimal? @db.Decimal
+  flash_loan_in_usd    Decimal? @db.Decimal
 
+  @@index([transaction_hash], map: "idx_liquidation_hash")
   @@schema("mev_inspect")
 }
 
@@ -141,5 +135,23 @@ model erc20_historical_price {
   timestamp     DateTime? @db.Timestamptz(6)
 
   @@id([token_address, currency, to_block])
+  @@schema("mev_inspect")
+}
+
+model repayment_event {
+  transaction_hash          String  @db.VarChar(66)
+  payer                     String  @db.VarChar(42)
+  borrower                  String  @db.VarChar(42)
+  asset_in_debt             String  @db.VarChar(42)
+  debt_to_cover             Decimal @db.Decimal
+  liquidated_amount         Decimal @db.Decimal
+  asset_liquidated          String  @db.VarChar(42)
+  repayment_amount_in_usd   Decimal @db.Decimal
+  liquidated_amount_in_usd  Decimal @db.Decimal
+  seizure_event_log_index   Int
+  repayment_event_log_index Int
+  block_number              Int
+
+  @@unique([transaction_hash, seizure_event_log_index, repayment_event_log_index])
   @@schema("mev_inspect")
 }

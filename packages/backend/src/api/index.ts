@@ -51,7 +51,7 @@ async function main() {
 			return response.status(400).send({ error: "Invalid query parameters" });
 		}
 		const param = request.params as { block: number };
-		const block = await repository.getBlockWithTransactions(param.block);
+		const block = await service.getBlockWithTransactions(param.block);
 		response.status(200).send(block);
 	});
 

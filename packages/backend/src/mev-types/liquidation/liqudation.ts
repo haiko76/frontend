@@ -1,47 +1,60 @@
-import type { FlashLoan, Liquidate, Liquidation, Repayment } from "../arb";
+import type { FlashLoan, Liquidation, LiquidationEvent, Repayment, Seizure } from "../arb";
 
 export class LiquidationDetector {
 	getLiquidations(
 		repayments: Repayment[],
-		liquidations: Liquidate[],
+		seizures: Seizure[],
 		flashLoanMap: Record<string, FlashLoan>,
 	): Liquidation[] {
 		const ret: Liquidation[] = [];
-		for (const liquidation of liquidations) {
-			const sender = liquidation.transaction.from;
-			const repayment = this.getRepayment(liquidation, repayments);
+		const groupLiquidationEventByHash: Record<string, LiquidationEvent[]> = {};
+
+		for (const seizure of seizures) {
+			const repayment = this.getRepayment(seizure, repayments);
 			if (!repayment) {
 				continue;
 			}
-			const flashLoan = flashLoanMap[liquidation.transaction.hash] ?? undefined;
-			ret.push({
-				blockNumber: liquidation.blockNumber,
-				transactionHash: liquidation.transaction.hash,
+			const hash = seizure.transaction.hash;
+			if (!groupLiquidationEventByHash[hash]) {
+				groupLiquidationEventByHash[hash] = [];
+			}
+			const event: LiquidationEvent = {
 				repayment,
-				liquidate: liquidation,
-				liquidator: { sender, beneficiary: liquidation.liquidator },
-				borrower: liquidation.borrower,
+				seizure,
 				collateral: {
-					address: liquidation.liquidatedAsset,
-					amount: liquidation.liquidatedCollateralAmount,
+					address: seizure.liquidatedAsset,
+					amount: seizure.liquidatedCollateralAmount,
 				},
 				debt: {
 					address: repayment.borrowedAsset,
 					amount: repayment.debtAmount,
 				},
-				protocols: [liquidation.contract.protocol.abi],
-				flashLoan: flashLoan
-					? {
-							flashLoanAsset: flashLoan.token,
-							flashLoanAmount: flashLoan.amount,
-						}
-					: undefined,
+				seizureEventLogIndex: seizure.event.logIndex,
+				repaymentEventLogIndex: repayment.event.logIndex,
+			};
+			groupLiquidationEventByHash[hash].push(event);
+		}
+		for (const [hash, events] of Object.entries(groupLiquidationEventByHash)) {
+			let flashLoan;
+			if (flashLoanMap[hash]) {
+				flashLoan = {
+					flashLoanAsset: flashLoanMap[hash].token,
+					flashLoanAmount: flashLoanMap[hash].amount,
+				};
+			}
+			ret.push({
+				blockNumber: events[0].seizure.blockNumber,
+				transactionHash: hash,
+				liquidator: events[0].seizure.liquidator,
+				protocols: [events[0].seizure.contract.protocol.abi],
+				liquidationEvents: events,
+				flashLoan,
 			});
 		}
 		return ret;
 	}
 
-	private getRepayment(liquidations: Liquidate, repayments: Repayment[]): Repayment | null {
+	private getRepayment(liquidations: Seizure, repayments: Repayment[]): Repayment | null {
 		const repayment = repayments.reverse().find((repayment) => {
 			if (liquidations.contract.protocol.abi === "CompoundV2") {
 				return (

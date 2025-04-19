@@ -7,44 +7,32 @@ export const PrismaConverter = {
 	convertLiquidation(liquidations: Liquidation[]): PrismaLiquidation[] {
 		const prismaLiquidations: PrismaLiquidation[] = [];
 		for (const liq of liquidations) {
-			const {
-				blockNumber,
-				transactionHash,
-				liquidator,
-				liquidate,
-				repayment,
-				borrower,
-				protocols,
-				flashLoan,
-				profitInUsd,
-				costInUsd,
-				repaymentAmountInUsd,
-				liquidatedAmountInUsd,
-			} = liq;
-			const prismaLiq: PrismaLiquidation = {
-				blockNumber: blockNumber,
-				transactionHash: transactionHash,
-				liquidator: liquidator.sender,
-				payer: repayment.payer,
-				assetInDebt: repayment.borrowedAsset,
-				debtAmount: bigintToDecimal(repayment.debtAmount),
-				liquidatedAmount: bigintToDecimal(liquidate.liquidatedCollateralAmount),
-				liquidatedAsset: liquidate.liquidatedAsset,
-				profitInUsd: Decimal(profitInUsd ?? 0),
-				costInUsd: Decimal(costInUsd ?? 0),
-				repaymentAmountInUsd: Decimal(repaymentAmountInUsd ?? 0),
-				liquidatedAmountInUsd: Decimal(liquidatedAmountInUsd ?? 0),
-				borrower: borrower,
-				protocols: protocols,
-				flashLoan: flashLoan
+			prismaLiquidations.push({
+				...liq,
+				repaymentEvents: liq.liquidationEvents.map((e) => ({
+					transactionHash: liq.transactionHash,
+					payer: e.repayment.payer,
+					borrower: e.seizure.borrower,
+					assetInDebt: e.repayment.borrowedAsset,
+					debtAmount: bigintToDecimal(e.repayment.debtAmount),
+					liquidatedAmount: bigintToDecimal(e.seizure.liquidatedCollateralAmount),
+					liquidatedAsset: e.seizure.liquidatedAsset,
+					repaymentAmountInUsd: Decimal(e.repaymentAmountInUsd ?? 0),
+					liquidatedAmountInUsd: Decimal(e.liquidatedAmountInUsd ?? 0),
+					seizureEventLogIndex: e.seizureEventLogIndex,
+					repaymentEventLogIndex: e.repaymentEventLogIndex,
+				})),
+				revenueInUsd: Decimal(liq.revenueInUsd ?? 0),
+				profitInUsd: Decimal(liq.profitInUsd ?? 0),
+				costInUsd: Decimal(liq.costInUsd ?? 0),
+				flashLoan: liq.flashLoan
 					? {
-							flashLoanAsset: flashLoan.flashLoanAsset,
-							flashLoanAmount: bigintToDecimal(flashLoan.flashLoanAmount),
-							flashLoanInUsd: Decimal(flashLoan.flashLoanInUsd ?? 0),
+							flashLoanAsset: liq.flashLoan.flashLoanAsset,
+							flashLoanAmount: bigintToDecimal(liq.flashLoan.flashLoanAmount),
+							flashLoanInUsd: Decimal(liq.flashLoan.flashLoanInUsd ?? 0),
 						}
 					: undefined,
-			};
-			prismaLiquidations.push(prismaLiq);
+			});
 		}
 		return prismaLiquidations;
 	},

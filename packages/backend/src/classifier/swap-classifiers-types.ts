@@ -4,12 +4,12 @@ import type {
 	ChainId,
 	FlashLoan,
 	LendingProtocol,
-	Liquidate,
 	LiquidityDeposit,
 	LiquidityWithdrawal,
 	Pool,
 	PoolData,
 	Repayment,
+	Seizure,
 	Swap,
 	SwapProtocol,
 	Transfer,
@@ -131,7 +131,7 @@ interface LiquidateClassifier extends BaseClassifier {
 	protocol: LendingProtocol;
 	type: ClassifierType.LIQUIDATE;
 	isValid: (event: LogEvent, address: string, chainId: ChainId) => boolean;
-	parse: (market: Market, event: ClassifiedEvent) => Liquidate | null;
+	parse: (market: Market, event: ClassifiedEvent) => Seizure | null;
 	market: {
 		getCalls: (address: string) => Call[];
 		processCalls: (chainId: ChainId, address: string, result: unknown[]) => MarketData | null;

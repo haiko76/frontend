@@ -1,7 +1,7 @@
 import type { Call } from "ethcall";
 import poolAbi from "../../abi/aaveV1Pool";
 import type { LogEvent } from "../../parser";
-import { type ChainId, type Liquidate, Protocol, type Repayment } from "../../types";
+import { type ChainId, Protocol, type Repayment, type Seizure } from "../../types";
 import { getLendingPoolByAddress } from "../dex-classifiers/classifiers";
 import type { Market, MarketData } from "../lending-classifier-types";
 import { type ClassifiedEvent, ClassifierType, type Classifiers } from "../types";
@@ -72,7 +72,7 @@ function parseRepayment(market: Market, event: ClassifiedEvent): Repayment {
 	};
 }
 
-function parseLiquidate(market: Market, event: ClassifiedEvent): Liquidate {
+function parseLiquidate(market: Market, event: ClassifiedEvent): Seizure {
 	const {
 		values,
 		transactionFrom,

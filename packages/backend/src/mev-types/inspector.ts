@@ -78,12 +78,12 @@ export class Inspector {
 		}
 	}
 
-	async inspectMevBlock(blockNumber: bigint): Promise<{
+	async inspectMevBlock(blockNumber: number): Promise<{
 		mev: MevResult;
 		transactions: Transaction[];
 		block: Block | null;
 	}> {
-		const response = await this.fetcher.getBlockLogs(Number(blockNumber));
+		const response = await this.fetcher.getBlockLogs(blockNumber);
 		if (!response) {
 			return {
 				mev: {
@@ -138,9 +138,14 @@ export class Inspector {
 		for (const sandwich of sandwiches) {
 			sandwich.profit.map((p) => allAssetAddress.add(p.address));
 		}
+		for (const transfer of transfers) {
+			allAssetAddress.add(transfer.asset);
+		}
 		for (const liq of liquidations) {
-			allAssetAddress.add(liq.repayment.borrowedAsset);
-			allAssetAddress.add(liq.liquidate.liquidatedAsset);
+			for (const event of liq.liquidationEvents) {
+				allAssetAddress.add(event.repayment.borrowedAsset);
+				allAssetAddress.add(event.seizure.liquidatedAsset);
+			}
 		}
 
 		if (allAssetAddress.size > 0) {
@@ -152,86 +157,90 @@ export class Inspector {
 			for (const [key, value] of Object.entries(tokenMetadata)) {
 				allAssetMetadataMap[key] = value;
 			}
-			for (const arbitrage of arbitrages) {
-				for (const profit of arbitrage.profit) {
-					const tokenMetadata = allAssetMetadataMap[profit.address];
-					if (tokenMetadata && tokenMetadata.price) {
-						const revenueInUsd = calculateTokenValueInUSD(
-							profit.amount,
-							tokenMetadata.price.rate,
-							tokenMetadata.decimals,
-						);
-						const { gasUsed, gasPrice } = arbitrage.cost;
-						const wethPrice = allAssetMetadataMap[WETH_ADDRESS]?.price?.rate;
-						if (!wethPrice) {
-							throw new Error(`Missing rate for token ${WETH_ADDRESS}`);
-						}
-						const costInUsd = calculateTxGasCost(gasUsed, gasPrice, wethPrice);
-						arbitrage.costInUsd = costInUsd;
-						arbitrage.profitInUsd = revenueInUsd - costInUsd;
-					}
-				}
-			}
+			// for (const arbitrage of arbitrages) {
+			// 	for (const profit of arbitrage.profit) {
+			// 		const tokenMetadata = allAssetMetadataMap[profit.address];
+			// 		if (tokenMetadata && tokenMetadata.price) {
+			// 			const revenueInUsd = calculateTokenValueInUSD(
+			// 				profit.amount,
+			// 				tokenMetadata.price.rate,
+			// 				tokenMetadata.decimals,
+			// 			);
+			// 			const { gasUsed, gasPrice } = arbitrage.cost;
+			// 			const wethPrice = allAssetMetadataMap[WETH_ADDRESS]?.price?.rate;
+			// 			if (!wethPrice) {
+			// 				throw new Error(`Missing rate for token ${WETH_ADDRESS}`);
+			// 			}
+			// 			const costInUsd = calculateTxGasCost(gasUsed, gasPrice, wethPrice);
+			// 			arbitrage.costInUsd = costInUsd;
+			// 			arbitrage.profitInUsd = revenueInUsd - costInUsd;
+			// 		}
+			// 	}
+			// }
 			for (const liquidation of liquidations) {
-				const debtToCover = liquidation.repayment.debtAmount;
-				const liquidatedAmount = liquidation.liquidate.liquidatedCollateralAmount;
-				const debtAssetMetadata = allAssetMetadataMap[liquidation.repayment.borrowedAsset];
-				const collateralAssetMetadata = allAssetMetadataMap[liquidation.liquidate.liquidatedAsset];
-				if (!debtAssetMetadata.price || !collateralAssetMetadata.price) {
-					throw new Error(`Missing rate for token ${liquidation.repayment.borrowedAsset}`);
+				let revenueInUsd = 0;
+				for (const event of liquidation.liquidationEvents) {
+					const debtToCover = event.repayment.debtAmount;
+					const liquidatedAmount = event.seizure.liquidatedCollateralAmount;
+					const debtAssetMetadata = allAssetMetadataMap[event.repayment.borrowedAsset];
+					const collateralAssetMetadata = allAssetMetadataMap[event.seizure.liquidatedAsset];
+					if (!debtAssetMetadata.price || !collateralAssetMetadata.price) {
+						throw new Error(`Missing rate for token ${event.repayment.borrowedAsset}`);
+					}
+					const debtToCoverInUsd = calculateTokenValueInUSD(
+						debtToCover,
+						debtAssetMetadata.price.rate,
+						debtAssetMetadata.decimals,
+					);
+					const liquidatedAmountInUsd = calculateTokenValueInUSD(
+						liquidatedAmount,
+						collateralAssetMetadata.price.rate,
+						collateralAssetMetadata.decimals,
+					);
+					event.liquidatedAmountInUsd = liquidatedAmountInUsd;
+					event.repaymentAmountInUsd = debtToCoverInUsd;
+					revenueInUsd += liquidatedAmountInUsd - debtToCoverInUsd;
 				}
-				const debtToCoverInUsd = calculateTokenValueInUSD(
-					debtToCover,
-					debtAssetMetadata.price.rate,
-					debtAssetMetadata.decimals,
-				);
-				const liquidatedAmountInUsd = calculateTokenValueInUSD(
-					liquidatedAmount,
-					collateralAssetMetadata.price.rate,
-					collateralAssetMetadata.decimals,
-				);
-				liquidation.liquidatedAmountInUsd = Number(liquidatedAmountInUsd.toFixed(2));
-				liquidation.repaymentAmountInUsd = Number(debtToCoverInUsd.toFixed(2));
-				const { gasUsed, gasPrice } = liquidation.liquidate.transaction;
-				// WETH address
+				// This is the same for all liquidation call in a transaction
+				const { gasPrice, gasUsed } = liquidation.liquidationEvents[0].seizure.transaction;
 				const wethPrice = allAssetMetadataMap[WETH_ADDRESS].price?.rate;
 				if (!wethPrice) {
 					throw new Error(`Missing rate for token ${WETH_ADDRESS}`);
 				}
 				const costInUsd = calculateTxGasCost(gasUsed, gasPrice, wethPrice);
-				liquidation.costInUsd = Number(costInUsd.toFixed(2));
-				const profitInUsd = liquidatedAmountInUsd - debtToCoverInUsd - liquidation.costInUsd;
-				liquidation.profitInUsd = profitInUsd;
+				liquidation.costInUsd = costInUsd;
+				liquidation.profitInUsd = revenueInUsd - costInUsd;
+				liquidation.revenueInUsd = revenueInUsd;
 			}
 
-			for (const sandwich of sandwiches) {
-				let totalProfit = 0;
-				for (const p of sandwich.profit) {
-					const tokenMetadata = allAssetMetadataMap[p.address];
-					if (!tokenMetadata || !tokenMetadata.price) {
-						continue;
-					}
-					const profitInUsd = calculateTokenValueInUSD(p.amount, tokenMetadata.price.rate, tokenMetadata.decimals);
-					totalProfit += profitInUsd;
-				}
-				sandwich.profitInUsd = totalProfit;
-				const { gasUsed: frontGasUsed, gasPrice: frontGasPrice } = sandwich.sandwich.frontSwap.transaction;
-				// WETH address
-				const wethPrice = allAssetMetadataMap[WETH_ADDRESS].price?.rate;
-				if (!wethPrice) {
-					throw new Error(`Missing rate for token ${WETH_ADDRESS}`);
-				}
-				const costInUsd = calculateTxGasCost(frontGasUsed, frontGasPrice, wethPrice);
-				const { gasUsed: backGasUsed, gasPrice: backGasPrice } = sandwich.sandwich.backSwap.transaction;
-				const backCostInUsd = calculateTxGasCost(backGasUsed, backGasPrice, wethPrice);
-				sandwich.costInUsd = costInUsd + backCostInUsd;
-			}
+			// for (const sandwich of sandwiches) {
+			// 	let totalProfit = 0;
+			// 	for (const p of sandwich.profit) {
+			// 		const tokenMetadata = allAssetMetadataMap[p.address];
+			// 		if (!tokenMetadata || !tokenMetadata.price) {
+			// 			continue;
+			// 		}
+			// 		const profitInUsd = calculateTokenValueInUSD(p.amount, tokenMetadata.price.rate, tokenMetadata.decimals);
+			// 		totalProfit += profitInUsd;
+			// 	}
+			// 	sandwich.profitInUsd = totalProfit;
+			// 	const { gasUsed: frontGasUsed, gasPrice: frontGasPrice } = sandwich.sandwich.frontSwap.transaction;
+			// 	// WETH address
+			// 	const wethPrice = allAssetMetadataMap[WETH_ADDRESS].price?.rate;
+			// 	if (!wethPrice) {
+			// 		throw new Error(`Missing rate for token ${WETH_ADDRESS}`);
+			// 	}
+			// 	const costInUsd = calculateTxGasCost(frontGasUsed, frontGasPrice, wethPrice);
+			// 	const { gasUsed: backGasUsed, gasPrice: backGasPrice } = sandwich.sandwich.backSwap.transaction;
+			// 	const backCostInUsd = calculateTxGasCost(backGasUsed, backGasPrice, wethPrice);
+			// 	sandwich.costInUsd = costInUsd + backCostInUsd;
+			// }
 		}
 
 		return {
 			liquidation: liquidations,
-			sandwich: sandwiches,
-			arbitrage: arbitrages,
+			sandwich: [],
+			arbitrage: [],
 			transfers: transfers,
 		};
 	}

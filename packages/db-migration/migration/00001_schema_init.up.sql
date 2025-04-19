@@ -34,22 +34,35 @@ CREATE TABLE arbitrage(
 CREATE TABLE liquidation(
     transaction_hash VARCHAR(66) PRIMARY KEY,
     block_number INTEGER NOT NULL,
-    payer VARCHAR(42) NOT NULL,
-    borrower VARCHAR(42) NOT NULL,
     liquidator VARCHAR(42),
-    asset_in_debt VARCHAR(42) NOT NULL,
-    debt_to_cover DECIMAL NOT NULL,
-    liquidated_amount DECIMAL NOT NULL,
-    asset_liquidated VARCHAR(42) NOT NULL,
     cost_in_usd DECIMAL NOT NULL,
     profit_amount_in_usd DECIMAL NOT NULL,
-    repayment_amount_in_usd DECIMAL NOT NULL,
-    liquidated_amount_in_usd DECIMAL NOT NULL,
+    revenue_in_usd DECIMAL NOT NULL,
     protocols VARCHAR(255)[] NOT NULL,
     flash_loan_asset VARCHAR(42),
     flash_loan_amount DECIMAL,
     flash_loan_in_usd DECIMAL
 );
+
+CREATE INDEX idx_liquidation_hash ON liquidation(transaction_hash);
+
+CREATE TABLE repayment_event(
+    transaction_hash VARCHAR(66) NOT NULL,
+    block_number INTEGER NOT NULL,
+    payer VARCHAR(42) NOT NULL,
+    borrower VARCHAR(42) NOT NULL,
+    asset_in_debt VARCHAR(42) NOT NULL,
+    debt_to_cover DECIMAL NOT NULL,
+    liquidated_amount DECIMAL NOT NULL,
+    asset_liquidated VARCHAR(42) NOT NULL,
+    repayment_amount_in_usd DECIMAL NOT NULL,
+    liquidated_amount_in_usd DECIMAL NOT NULL,
+    seizure_event_log_index INTEGER NOT NULL,
+    repayment_event_log_index INTEGER NOT NULL,
+
+    UNIQUE(transaction_hash, seizure_event_log_index, repayment_event_log_index)
+);
+
 
 CREATE TABLE sandwich(
     transaction_hash VARCHAR(66) PRIMARY KEY,
@@ -133,6 +146,7 @@ ALTER TABLE sandwich SET SCHEMA mev_inspect;
 ALTER TABLE "transfer" SET SCHEMA mev_inspect;
 ALTER TABLE swap SET SCHEMA mev_inspect;
 ALTER TABLE pool SET SCHEMA mev_inspect;
+ALTER TABLE repayment_event SET SCHEMA mev_inspect;
 GRANT ALL PRIVILEGES ON SCHEMA mev_inspect TO mev_inspect;
 GRANT USAGE ON SCHEMA mev_inspect TO readonly;
 GRANT SELECT ON ALL TABLES IN SCHEMA mev_inspect TO readonly;

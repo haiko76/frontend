@@ -164,6 +164,7 @@ export type FullArbitrage = FullTxResponseCommon & {
 		flashLoanAmount: bigint;
 		flashLoanInUsd?: number;
 	};
+	assetMetadata: Record<string, Omit<TokenMetadata, "price">>;
 	profitInUsd?: number;
 	costInUsd?: number;
 };
@@ -250,49 +251,64 @@ export type FullSandwich = FullTxResponseCommon & {
 	victimSwap: BaseTxWithTraces[];
 	profitInUsd: number;
 	costInUsd: number;
+	assetMetadata: Record<string, Omit<TokenMetadata, "price">>;
 	protocols: string[];
+};
+
+export type LiquidationEvent = {
+	repayment: Repayment;
+	seizure: Seizure;
+	collateral: TokenAmount;
+	debt: TokenAmount;
+	repaymentAmountInUsd?: number;
+	liquidatedAmountInUsd?: number;
+	seizureEventLogIndex: number;
+	repaymentEventLogIndex: number;
 };
 
 type Liquidation = {
 	blockNumber: number;
 	transactionHash: string;
-	liquidator: { sender: string; beneficiary: string };
-	repayment: Repayment;
-	liquidate: Liquidate;
-	borrower: string;
-	collateral: TokenAmount;
-	debt: TokenAmount;
+	liquidator: string;
 	protocols: string[];
 	flashLoan?: {
 		flashLoanAsset: string;
 		flashLoanAmount: bigint;
 		flashLoanInUsd?: number;
 	};
-	repaymentAmountInUsd?: number;
-	liquidatedAmountInUsd?: number;
+	liquidationEvents: LiquidationEvent[];
+	revenueInUsd?: number;
 	profitInUsd?: number;
 	costInUsd?: number;
+};
+
+export type PrismaLiquidationEvent = {
+	transactionHash: string;
+	payer: string;
+	borrower: string;
+	assetInDebt: string;
+	debtAmount: Decimal;
+	liquidatedAmount: Decimal;
+	liquidatedAsset: string;
+	repaymentAmountInUsd: Decimal;
+	liquidatedAmountInUsd: Decimal;
+	seizureEventLogIndex: number;
+	repaymentEventLogIndex: number;
 };
 
 export type PrismaLiquidation = {
 	blockNumber: number;
 	transactionHash: string;
 	liquidator: string;
-	payer: string;
-	assetInDebt: string;
-	debtAmount: Decimal;
-	liquidatedAmount: Decimal;
-	liquidatedAsset: string;
+	repaymentEvents: PrismaLiquidationEvent[];
+	revenueInUsd: Decimal;
 	profitInUsd: Decimal;
 	costInUsd: Decimal;
-	borrower: string;
 	flashLoan?: {
 		flashLoanAsset: string;
 		flashLoanAmount: Decimal;
 		flashLoanInUsd?: Decimal;
 	};
-	repaymentAmountInUsd: Decimal;
-	liquidatedAmountInUsd: Decimal;
 	protocols: string[];
 };
 
@@ -301,6 +317,7 @@ export type FullLiquidation = FullTxResponseCommon &
 		traces: BaseTransfer[];
 		from: string;
 		to: string;
+		assetMetadata: Record<string, Omit<TokenMetadata, "price">>;
 	};
 
 type Event = {
@@ -376,7 +393,7 @@ type Repayment = Event & {
 	debtAmount: bigint;
 };
 
-type Liquidate = Event & {
+type Seizure = Event & {
 	contract: {
 		address: string;
 		protocol: {
@@ -447,7 +464,7 @@ export type {
 	LiquidityDeposit,
 	LiquidityWithdrawal,
 	Repayment,
-	Liquidate,
+	Seizure,
 	Liquidation,
 	Mev,
 	AlchemyInternalTransfer,

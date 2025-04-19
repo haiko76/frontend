@@ -1,4 +1,4 @@
-import type { PrismaClient, sandwich, transfer } from "@prisma/client";
+import type { PrismaClient, repayment_event, sandwich, transfer } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
 import JSONBig from "json-bigint";
 import { sha3 } from "../parser";
@@ -13,6 +13,7 @@ import {
 	type Pool,
 	type PrismaArbitrage,
 	type PrismaLiquidation,
+	type PrismaLiquidationEvent,
 	type PrismaSandwich,
 	type Protocol,
 	type TokenMetadata,
@@ -65,13 +66,13 @@ export class Repository {
 		transactions: Transaction[];
 	} | null> {
 		const block = await this.prisma.block.findUnique({
-			where: { number: blockNumber },
+			where: { number: Number(blockNumber) },
 		});
 		if (!block) {
 			return null;
 		}
 		const transactions = await this.prisma.transaction.findMany({
-			where: { block_number: blockNumber },
+			where: { block_number: Number(blockNumber) },
 		});
 
 		return {
@@ -123,13 +124,109 @@ export class Repository {
 			transactionLogIndex: res.index,
 		};
 		switch (res.label as MevType) {
+			case MevType.Liquidation: {
+				const allAssetAddress: string[] = [];
+				const liquidationTxs: {
+					transaction_hash: string;
+					block_number: number;
+					liquidator: string | null;
+					protocols: string[];
+					profit_amount_in_usd: number;
+					cost_in_usd: number;
+					revenue_in_usd: number;
+					event_log_index: number;
+					transfer_asset_id: string;
+					transfer_sender: string;
+					transfer_receiver: string;
+					transfer_amount: Decimal;
+				}[] = await this.prisma.$queryRaw`
+					SELECT 
+						l.transaction_hash,
+						l.block_number,
+						l.liquidator,
+						l.protocols,
+						l.profit_amount_in_usd,
+						l.cost_in_usd,
+						l.revenue_in_usd,
+						t.event_log_index,
+						t.asset_id AS transfer_asset_id,
+						t.from AS transfer_sender,
+						t.to AS transfer_receiver,
+						t.amount AS transfer_amount
+					FROM 
+						mev_inspect.liquidation l
+					JOIN 
+						mev_inspect.transfer t ON l.transaction_hash = t.transaction_hash
+					WHERE 
+						l.transaction_hash = ${hash}
+					ORDER BY 
+						t.event_log_index
+				`;
+				if (liquidationTxs.length === 0) {
+					return null;
+				}
+
+				const repaymentEvents: repayment_event[] = await this.prisma.repayment_event.findMany({
+					where: {
+						transaction_hash: hash,
+					},
+				});
+				const liquidationEvents: PrismaLiquidationEvent[] = repaymentEvents.map((repayment) => {
+					allAssetAddress.push(repayment.asset_in_debt);
+					return {
+						transactionHash: repayment.transaction_hash,
+						payer: repayment.payer,
+						borrower: repayment.borrower,
+						assetInDebt: repayment.asset_in_debt,
+						debtAmount: repayment.debt_to_cover,
+						liquidatedAmount: repayment.liquidated_amount,
+						liquidatedAsset: repayment.asset_liquidated,
+						repaymentAmountInUsd: repayment.repayment_amount_in_usd,
+						liquidatedAmountInUsd: repayment.liquidated_amount_in_usd,
+						seizureEventLogIndex: repayment.seizure_event_log_index,
+						repaymentEventLogIndex: repayment.repayment_event_log_index,
+					};
+				});
+				const traces = liquidationTxs.map((t) => {
+					allAssetAddress.push(t.transfer_asset_id);
+					return {
+						from: t.transfer_sender,
+						to: t.transfer_receiver,
+						asset: t.transfer_asset_id,
+						value: decimalToBigInt(t.transfer_amount),
+						eventLogIndex: t.event_log_index,
+					};
+				});
+				const allAssetMetadataMap: Record<
+					string,
+					Omit<TokenMetadata, "price">
+				> = await this.getAssetMetadataByAddresses(allAssetAddress);
+
+				return {
+					type: PrismaTxType.Liquidation,
+					tx: {
+						blockNumber: liquidationTxs[0].block_number,
+						transactionHash: liquidationTxs[0].transaction_hash,
+						liquidator: liquidationTxs[0].liquidator ?? "",
+						protocols: liquidationTxs[0].protocols,
+						profitInUsd: Decimal(liquidationTxs[0].profit_amount_in_usd),
+						costInUsd: Decimal(liquidationTxs[0].cost_in_usd),
+						revenueInUsd: Decimal(liquidationTxs[0].revenue_in_usd),
+						repaymentEvents: liquidationEvents,
+						traces: traces,
+						assetMetadata: allAssetMetadataMap,
+						...commonData,
+					},
+				};
+			}
 			case MevType.Arbitrage: {
 				const arbTx: {
 					transaction_hash: string;
 					block_number: number;
 					arbitrager: string;
 					protocols: string[];
-					profit_raw: string;
+					// biome-ignore lint/suspicious/noExplicitAny: should be Token Metadata type, profit_raw is JSON
+					profit_raw: any;
 					cost_in_usd: number;
 					profit_amount_in_usd: number;
 					flash_loan_asset: string | null;
@@ -188,18 +285,28 @@ export class Repository {
 					protocols: tx.protocols,
 					flashLoan: flashLoan,
 				};
+				const allAssetAddress: string[] = [];
+				const traces = arbTx.map((t) => {
+					allAssetAddress.push(t.transfer_asset_id);
+					return {
+						eventLogIndex: t.event_log_index,
+						from: t.transfer_sender,
+						to: t.transfer_receiver,
+						asset: t.transfer_asset_id,
+						value: decimalToBigInt(t.transfer_amount),
+					};
+				});
+				const allAssetMetadataMap: Record<
+					string,
+					Omit<TokenMetadata, "price">
+				> = await this.getAssetMetadataByAddresses(allAssetAddress);
 				return {
 					type: PrismaTxType.Arbitrage,
 					tx: {
 						...arbRes,
-						traces: arbTx.map((t) => ({
-							eventLogIndex: t.event_log_index,
-							from: t.transfer_sender,
-							to: t.transfer_receiver,
-							asset: t.transfer_asset_id,
-							value: decimalToBigInt(t.transfer_amount),
-						})),
+						traces: traces,
 						...commonData,
+						assetMetadata: allAssetMetadataMap,
 					},
 				};
 			}
@@ -218,22 +325,22 @@ export class Repository {
 						protocols
 					FROM 
 						mev_inspect.sandwich
-					WHERE transaction_hash = ${hash}`;
+					WHERE sandwich_id=(
+						SELECT sandwich_id 
+						FROM mev_inspect.sandwich
+						WHERE transaction_hash=${hash}
+					)`;
 				if (sandwichTxs.length === 0) {
 					return null;
 				}
 				const { block_number, profit_amount_in_usd, cost_in_usd, sandwich_id, sandwicher, protocols } = sandwichTxs[0];
-				console.log(sandwichTxs);
-				const sandwichId = sandwich_id;
-				console.log(sandwichId);
 				const traces: transfer[] = await this.prisma.$queryRaw`
 					SELECT * FROM mev_inspect.transfer 
 					WHERE transaction_hash IN (
 						SELECT transaction_hash 
 						FROM mev_inspect.sandwich 
-						WHERE sandwich_id=${sandwichId}
+						WHERE sandwich_id=${sandwich_id}
 					)`;
-
 				const tracesGroupedByTxHash: Record<string, transfer[]> = {};
 				for (const t of traces) {
 					if (!tracesGroupedByTxHash[t.transaction_hash]) {
@@ -241,10 +348,11 @@ export class Repository {
 					}
 					tracesGroupedByTxHash[t.transaction_hash].push(t);
 				}
-				console.log(tracesGroupedByTxHash);
 				const frontTxs: BaseTxWithTraces[] = [];
 				const backTxs: BaseTxWithTraces[] = [];
 				const victimTxs: BaseTxWithTraces[] = [];
+				const allAssetAddress: string[] = [];
+
 				for (const sandwich of sandwichTxs) {
 					const sandwichType = sandwich.type;
 					switch (sandwichType) {
@@ -252,13 +360,16 @@ export class Repository {
 							frontTxs.push({
 								txHash: sandwich.transaction_hash,
 								transactionLogIndex: sandwich.transaction_log_index,
-								traces: tracesGroupedByTxHash[sandwich.transaction_hash].map((t) => ({
-									eventLogIndex: t.event_log_index,
-									from: t.from,
-									to: t.to ?? "",
-									asset: t.asset_id,
-									value: decimalToBigInt(t.amount ?? Decimal(0)),
-								})),
+								traces: tracesGroupedByTxHash[sandwich.transaction_hash].map((t) => {
+									allAssetAddress.push(t.asset_id);
+									return {
+										eventLogIndex: t.event_log_index,
+										from: t.from,
+										to: t.to ?? "",
+										asset: t.asset_id,
+										value: decimalToBigInt(t.amount ?? Decimal(0)),
+									};
+								}),
 							});
 							break;
 						}
@@ -266,13 +377,16 @@ export class Repository {
 							backTxs.push({
 								txHash: sandwich.transaction_hash,
 								transactionLogIndex: sandwich.transaction_log_index,
-								traces: tracesGroupedByTxHash[sandwich.transaction_hash].map((t) => ({
-									eventLogIndex: t.event_log_index,
-									from: t.from,
-									to: t.to ?? "",
-									asset: t.asset_id,
-									value: decimalToBigInt(t.amount ?? Decimal(0)),
-								})),
+								traces: tracesGroupedByTxHash[sandwich.transaction_hash].map((t) => {
+									allAssetAddress.push(t.asset_id);
+									return {
+										eventLogIndex: t.event_log_index,
+										from: t.from,
+										to: t.to ?? "",
+										asset: t.asset_id,
+										value: decimalToBigInt(t.amount ?? Decimal(0)),
+									};
+								}),
 							});
 							break;
 						}
@@ -280,18 +394,25 @@ export class Repository {
 							victimTxs.push({
 								txHash: sandwich.transaction_hash,
 								transactionLogIndex: sandwich.transaction_log_index,
-								traces: tracesGroupedByTxHash[sandwich.transaction_hash].map((t) => ({
-									eventLogIndex: t.event_log_index,
-									from: t.from,
-									to: t.to ?? "",
-									asset: t.asset_id,
-									value: decimalToBigInt(t.amount ?? Decimal(0)),
-								})),
+								traces: tracesGroupedByTxHash[sandwich.transaction_hash].map((t) => {
+									allAssetAddress.push(t.asset_id);
+									return {
+										eventLogIndex: t.event_log_index,
+										from: t.from,
+										to: t.to ?? "",
+										asset: t.asset_id,
+										value: decimalToBigInt(t.amount ?? Decimal(0)),
+									};
+								}),
 							});
 							break;
 						}
 					}
 				}
+				const allAssetMetadataMap: Record<
+					string,
+					Omit<TokenMetadata, "price">
+				> = await this.getAssetMetadataByAddresses(allAssetAddress);
 
 				return {
 					type: PrismaTxType.Sandwich,
@@ -301,97 +422,34 @@ export class Repository {
 						protocols: protocols,
 						profitInUsd: Number(profit_amount_in_usd),
 						costInUsd: Number(cost_in_usd),
-						sandwichId: sandwichId,
+						sandwichId: sandwich_id,
 						frontSwap: frontTxs,
 						backSwap: backTxs,
 						victimSwap: victimTxs,
 						...commonData,
-					},
-				};
-			}
-			case MevType.Liquidation: {
-				const liquidationTxs: {
-					transaction_hash: string;
-					block_number: number;
-					payer: string;
-					borrower: string;
-					liquidator: string | null;
-					asset_in_debt: string;
-					debt_to_cover: Decimal;
-					liquidation_amount: Decimal;
-					asset_liquidated: string;
-					protocols: string[];
-					profit_amount_in_usd: number;
-					cost_in_usd: number;
-					repayment_amount_in_usd: Decimal;
-					liquidated_amount_in_usd: Decimal;
-					event_log_index: number;
-					transfer_asset_id: string;
-					transfer_sender: string;
-					transfer_receiver: string;
-					transfer_amount: Decimal;
-				}[] = await this.prisma.$queryRaw`
-					SELECT 
-						l.transaction_hash,
-						l.block_number,
-						l.payer,
-						l.borrower,
-						l.liquidator,
-						l.asset_in_debt,
-						l.debt_to_cover,
-						l.liquidation_amount,
-						l.asset_liquidated,
-						l.protocols,
-						l.profit_amount_in_usd,
-						l.cost_in_usd,
-						l.repayment_amount_in_usd,
-						l.liquidated_amount_in_usd,
-						t.event_log_index,
-						t.asset_id AS transfer_asset_id,
-						t.from AS transfer_sender,
-						t.to AS transfer_receiver,
-						t.amount AS transfer_amount
-					FROM 
-						mev_inspect.liquidation l
-					JOIN 
-						mev_inspect.transfer t ON l.transaction_hash = t.transaction_hash
-					WHERE 
-						l.transaction_hash = ${hash}
-					ORDER BY 
-						t.event_log_index
-				`;
-				if (liquidationTxs.length === 0) {
-					return null;
-				}
-				return {
-					type: PrismaTxType.Liquidation,
-					tx: {
-						blockNumber: liquidationTxs[0].block_number,
-						transactionHash: liquidationTxs[0].transaction_hash,
-						payer: liquidationTxs[0].payer,
-						borrower: liquidationTxs[0].borrower,
-						liquidator: liquidationTxs[0].liquidator ?? "",
-						protocols: liquidationTxs[0].protocols,
-						assetInDebt: liquidationTxs[0].asset_in_debt,
-						debtAmount: liquidationTxs[0].debt_to_cover,
-						liquidatedAmount: liquidationTxs[0].liquidation_amount,
-						liquidatedAsset: liquidationTxs[0].asset_liquidated,
-						profitInUsd: Decimal(liquidationTxs[0].profit_amount_in_usd),
-						costInUsd: Decimal(liquidationTxs[0].cost_in_usd),
-						repaymentAmountInUsd: liquidationTxs[0].repayment_amount_in_usd,
-						liquidatedAmountInUsd: liquidationTxs[0].liquidated_amount_in_usd,
-						traces: liquidationTxs.map((t) => ({
-							from: t.transfer_sender,
-							to: t.transfer_receiver,
-							asset: t.transfer_asset_id,
-							value: decimalToBigInt(t.transfer_amount),
-							eventLogIndex: t.event_log_index,
-						})),
-						...commonData,
+						assetMetadata: allAssetMetadataMap,
 					},
 				};
 			}
 		}
+	}
+
+	async getAssetMetadataByAddresses(addresses: string[]): Promise<Record<string, Omit<TokenMetadata, "price">>> {
+		const assetMetadata = await this.prisma.token.findMany({
+			where: {
+				address: { in: addresses },
+			},
+		});
+		const assetMetadataMap: Record<string, Omit<TokenMetadata, "price">> = {};
+		for (const token of assetMetadata) {
+			assetMetadataMap[token.address] = {
+				address: token.address,
+				symbol: token.symbol ?? "",
+				decimals: token.decimals,
+				logo: token.logo ?? "",
+			};
+		}
+		return assetMetadataMap;
 	}
 
 	async getTransactionsByBlockNumber(blockNumber: number): Promise<{
@@ -481,16 +539,32 @@ export class Repository {
 		}
 		return tokenMetadataMap;
 	}
+
+	async getLatestBlock(): Promise<Block | null> {
+		const block = await this.prisma.block.findFirst({
+			orderBy: { number: "desc" },
+		});
+		if (!block) {
+			return null;
+		}
+		return {
+			hash: block.hash,
+			number: block.number,
+			timestamp: block.timestamp,
+		};
+	}
 }
 
 export class RepositoryWriteInTransaction extends Repository {
 	async writeBlock(block: Block): Promise<void> {
-		await this.prisma.block.create({
-			data: {
-				number: block.number,
+		await this.prisma.block.upsert({
+			where: { number: block.number },
+			create: {
 				hash: block.hash,
+				number: block.number,
 				timestamp: block.timestamp,
 			},
+			update: {},
 		});
 	}
 
@@ -607,6 +681,7 @@ export class RepositoryWriteInTransaction extends Repository {
 				address: metadata.address,
 				symbol: metadata.symbol,
 				decimals: metadata.decimals,
+				logo: metadata.logo,
 			});
 			if (metadata.price) {
 				prismaPrice.push({
@@ -697,25 +772,35 @@ export class RepositoryWriteInTransaction extends Repository {
 			return;
 		}
 		const prismaLiquidations = [];
+		const repaymentEvents = [];
 		const liquidationHashes: string[] = [];
 		for (const liquidation of liquidations) {
 			liquidationHashes.push(liquidation.transactionHash);
 			prismaLiquidations.push({
 				block_number: liquidation.blockNumber,
 				transaction_hash: liquidation.transactionHash,
-				payer: liquidation.payer,
-				borrower: liquidation.borrower,
 				liquidator: liquidation.liquidator,
-				asset_in_debt: liquidation.assetInDebt,
-				debt_to_cover: liquidation.debtAmount,
-				liquidated_amount: liquidation.liquidatedAmount,
-				asset_liquidated: liquidation.liquidatedAsset,
 				protocols: liquidation.protocols,
 				profit_amount_in_usd: liquidation.profitInUsd,
-				repayment_amount_in_usd: liquidation.repaymentAmountInUsd,
-				liquidated_amount_in_usd: liquidation.liquidatedAmountInUsd,
 				cost_in_usd: liquidation.costInUsd,
+				revenue_in_usd: liquidation.revenueInUsd,
 			});
+			for (const repayment of liquidation.repaymentEvents) {
+				repaymentEvents.push({
+					transaction_hash: liquidation.transactionHash,
+					block_number: liquidation.blockNumber,
+					payer: repayment.payer,
+					borrower: repayment.borrower,
+					asset_in_debt: repayment.assetInDebt,
+					debt_to_cover: repayment.debtAmount,
+					liquidated_amount: repayment.liquidatedAmount,
+					asset_liquidated: repayment.liquidatedAsset,
+					repayment_amount_in_usd: repayment.repaymentAmountInUsd,
+					liquidated_amount_in_usd: repayment.liquidatedAmountInUsd,
+					seizure_event_log_index: repayment.seizureEventLogIndex,
+					repayment_event_log_index: repayment.repaymentEventLogIndex,
+				});
+			}
 		}
 
 		Promise.all([
@@ -723,9 +808,58 @@ export class RepositoryWriteInTransaction extends Repository {
 				data: prismaLiquidations,
 				skipDuplicates: true,
 			}),
+			this.prisma.repayment_event.createMany({
+				data: repaymentEvents,
+				skipDuplicates: true,
+			}),
 			this.prisma.transaction.updateMany({
 				where: { hash: { in: liquidationHashes } },
 				data: { label: MevType.Liquidation },
+			}),
+		]);
+	}
+
+	async deleteCascade(rollBackBlockNumber: number): Promise<void> {
+		const deleteQueryFilter = {
+			block_number: {
+				gte: rollBackBlockNumber,
+			},
+		};
+		await Promise.all([
+			this.prisma.block.deleteMany({
+				where: {
+					number: {
+						gte: rollBackBlockNumber,
+					},
+				},
+			}),
+			this.prisma.arbitrage.deleteMany({
+				where: deleteQueryFilter,
+			}),
+			this.prisma.erc20_historical_price.deleteMany({
+				where: {
+					to_block: {
+						gte: rollBackBlockNumber,
+					},
+				},
+			}),
+			this.prisma.liquidation.deleteMany({
+				where: deleteQueryFilter,
+			}),
+			this.prisma.repayment_event.deleteMany({
+				where: deleteQueryFilter,
+			}),
+			this.prisma.sandwich.deleteMany({
+				where: deleteQueryFilter,
+			}),
+			this.prisma.swap.deleteMany({
+				where: deleteQueryFilter,
+			}),
+			this.prisma.transaction.deleteMany({
+				where: deleteQueryFilter,
+			}),
+			this.prisma.transfer.deleteMany({
+				where: deleteQueryFilter,
 			}),
 		]);
 	}

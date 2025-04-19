@@ -2,7 +2,7 @@ import type { Call } from "ethcall";
 import { Contract } from "ethcall";
 
 import marketAbi from "../../abi/compoundV2Market.js";
-import { type ChainId, type Liquidate, Protocol, type Repayment, nativeAsset } from "../../types.js";
+import { type ChainId, Protocol, type Repayment, type Seizure, nativeAsset } from "../../types.js";
 import type { LogEvent } from "../../utils/coder.js";
 import type { Market, MarketData } from "../lending-classifier-types.js";
 import { type ClassifiedEvent, ClassifierType, type Classifiers } from "../swap-classifiers-types.js";
@@ -90,7 +90,7 @@ function parseRepayment(market: Market, event: ClassifiedEvent): Repayment {
 	};
 }
 
-function parseLiquidate(market: Market, event: ClassifiedEvent): Liquidate {
+function parseLiquidate(market: Market, event: ClassifiedEvent): Seizure {
 	const {
 		values,
 		transactionFrom,

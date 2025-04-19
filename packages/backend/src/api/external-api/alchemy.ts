@@ -1,14 +1,21 @@
 import { Network } from "alchemy-sdk";
 import type { RepositoryWrite } from "../../repository/repository";
 import type { TokenMetadata } from "../../types";
-import { convertToRoundDay } from "../../utils/utils";
+import { convertToRoundDay, sleep } from "../../utils/utils";
 
 const apiKey = "W_WcrKxHTKNMw7fJEvpfpPIEhi_2d6Jx";
+
+enum ErrorCode {
+	ALCHEMY_RATE_LIMIT = 429,
+	ALCHEMY_INTERNAL_SERVER_ERROR = 500,
+	ALCHEMY_BAD_REQUEST = 400,
+}
 
 export class AlchemyAPI {
 	private readonly priceUrl = `https://api.g.alchemy.com/prices/v1/${apiKey}/tokens/historical`;
 	private readonly tokenMetadataUrl = `https://${Network.ETH_MAINNET}.g.alchemy.com/v2/${apiKey}`;
 	private readonly repository: RepositoryWrite;
+	private readonly blacklistTokenPrice: Set<string> = new Set(); // cache token without price that has been called before
 
 	constructor(repository: RepositoryWrite) {
 		this.repository = repository;
@@ -42,20 +49,44 @@ export class AlchemyAPI {
 					params: [addr],
 				}),
 			};
-			const priceRes = await fetch(this.priceUrl, priceOptions);
-			if (!priceRes.ok) {
-				console.log(`Error fetching price for ${addr}: ${priceRes.statusText}`);
+			if (this.blacklistTokenPrice.has(addr)) {
 				continue;
 			}
 			const metadataRes = await fetch(this.tokenMetadataUrl, metadataOptions);
 			if (!metadataRes.ok) {
 				console.log(`Error fetching metadata for ${addr}: ${metadataRes.statusText}`);
+				if (metadataRes.status === ErrorCode.ALCHEMY_RATE_LIMIT) {
+					console.log("Alchemy API rate limit exceeded, sleeping...");
+					sleep(100000 * 60); // sleep for 1 minute
+				}
 				continue;
 			}
-
-			const price = await priceRes.json();
 			const metadata = (await metadataRes.json()).result;
-			if (!price.data[0] || !metadata.decimals) {
+			const priceRes = await fetch(this.priceUrl, priceOptions);
+			if (!priceRes.ok) {
+				console.log(`Error fetching price for ${addr}: ${priceRes.statusText}`);
+				if (metadataRes.status === ErrorCode.ALCHEMY_RATE_LIMIT) {
+					console.log("Alchemy API rate limit exceeded, sleeping...");
+					sleep(100000 * 60); // sleep for 1 minute
+					continue;
+				}
+				this.blacklistTokenPrice.add(addr);
+				tokensMetadata.push({
+					symbol: metadata.symbol,
+					decimals: metadata.decimals,
+					address: addr,
+					logo: metadata.logo,
+				});
+				continue;
+			}
+			const price = await priceRes.json();
+			if (price.data.length === 0) {
+				tokensMetadata.push({
+					symbol: metadata.symbol,
+					decimals: metadata.decimals,
+					address: addr,
+					logo: metadata.logo,
+				});
 				continue;
 			}
 			const rate = Number(price.data[0].value);
